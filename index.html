@@ -317,37 +317,36 @@
         transition: none !important;
       }
     }
-	
-@media (max-width: 420px){
-  .wrap{
-    padding-left: 5px;
-    padding-right: 5px;
-  }
 
-  .content{
-    padding-left: 5px;   /* was 38px */
-    padding-right: 5px;  /* was 38px */
-  }
+    @media (max-width: 420px){
+      .wrap{
+        padding-left: 5px;
+        padding-right: 5px;
+      }
 
-  .footer{
-    padding-left: 5px;   /* was 38px */
-    padding-right: 5px;  /* was 38px */
-  }
-}
+      .content{
+        padding-left: 5px;   /* was 38px */
+        padding-right: 5px;  /* was 38px */
+      }
 
-@media (max-width: 420px){
+      .footer{
+        padding-left: 5px;   /* was 38px */
+        padding-right: 5px;  /* was 38px */
+      }
+    }
 
-  /* Brand logo image */
-  .brandLogo{
-    max-width: 420px;   /* clamp the size */
-    width: 90%;
-  }
+    @media (max-width: 420px){
+      /* Brand logo image */
+      .brandLogo{
+        max-width: 420px;   /* clamp the size */
+        width: 90%;
+      }
 
-  /* Galaxy orb size */
-  .orbWrap{
-    width: 230px;       /* was ~320px on mobile */
-  }
-}
+      /* Galaxy orb size */
+      .orbWrap{
+        width: 230px;       /* was ~320px on mobile */
+      }
+    }
   </style>
 </head>
 
@@ -401,6 +400,9 @@
 
     const ctx = canvas.getContext("2d", { alpha: true });
 
+    // ✅ Global slowdown (recommended)
+    const TIME_SCALE = 0.5; // 1 = normal, 0.5 = half speed, 0.3 = very slow
+
     const DPR = Math.min(2, window.devicePixelRatio || 1);
     let w = 0, h = 0;
 
@@ -430,8 +432,10 @@
         ? (fromTop ? rand(-h * 0.2, 0) : rand(-h * 0.2, h * 1.0))
         : rand(0, h);
 
+      // ✅ Slower speed range (recommended)
+      const speed = rand(8, 50); // px/sec (was 25..140)
+
       // Top-left -> bottom-right diagonal
-      const speed = rand(25, 140); // px/sec
       const angle = rand(Math.PI * 0.15, Math.PI * 0.30); // ~27°–54° down-right
       const vx = Math.cos(angle) * speed;
       const vy = Math.sin(angle) * speed;
@@ -455,7 +459,8 @@
     let last = performance.now();
 
     function tick(now) {
-      const dt = Math.min(0.033, (now - last) / 1000);
+      // ✅ Apply TIME_SCALE to dt (global slowdown)
+      const dt = Math.min(0.033, (now - last) / 1000) * TIME_SCALE;
       last = now;
 
       ctx.clearRect(0, 0, w, h);
@@ -481,10 +486,10 @@
         const tw = 0.55 + 0.45 * Math.sin(s.ph * 3.2);
         const alpha = s.a * tw;
 
-        // optional tiny streak
+        // ✅ Shorter streaks (recommended so it "feels" slower)
         if (s.tail > 0.05) {
-          const tx = s.vx * 0.06 * (1 + s.tail * 2);
-          const ty = s.vy * 0.06 * (1 + s.tail * 2);
+          const tx = s.vx * 0.03 * (1 + s.tail); // was 0.06*(1 + s.tail*2)
+          const ty = s.vy * 0.03 * (1 + s.tail);
 
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
