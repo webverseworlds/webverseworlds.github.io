@@ -14,7 +14,10 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600&family=Orbitron:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600&family=Orbitron:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
 
   <style>
     :root{
@@ -23,6 +26,9 @@
       --ink:#f6f8ff;
       --muted:rgba(246,248,255,.72);
       --line:rgba(120,170,255,.22);
+      --chipBorder:rgba(120,170,255,.28);
+      --chipBg:rgba(8,10,34,.45);
+      --chipGlow:rgba(120,170,255,.22);
     }
 
     *{ box-sizing:border-box; }
@@ -114,20 +120,25 @@
       justify-content:flex-start;
     }
 
+    /* ✅ Brand floats UP at midpoint */
     .brandLogo{
       width:min(520px, 100%);
       filter:drop-shadow(0 12px 18px rgba(0,0,0,.45));
       animation: float 5s ease-in-out infinite;
+      will-change: transform;
     }
 
     @media (max-width: 980px){
-      .brand{
-        justify-content:center;
-      }
+      .brand{ justify-content:center; }
     }
 
     @keyframes float{
       50%{ transform: translateY(-6px); }
+    }
+
+    /* ✅ Galaxy floats DOWN at midpoint (opposite of brand) */
+    @keyframes floatInverse{
+      50%{ transform: translateY(6px); }
     }
 
     .orbit{
@@ -158,6 +169,7 @@
       background:radial-gradient(circle, rgba(127,211,255,.35), transparent 55%);
       filter:blur(8px);
       animation:pulse 3.8s ease-in-out infinite;
+      will-change: transform;
     }
 
     @keyframes pulse{
@@ -170,6 +182,8 @@
       object-fit:contain;
       border-radius:50%;
       filter:drop-shadow(0 18px 32px rgba(0,0,0,.55));
+      animation: floatInverse 5s ease-in-out infinite;
+      will-change: transform;
     }
 
     .footer{
@@ -184,7 +198,7 @@
     .footer-left{
       display:flex;
       flex-direction:column;
-      gap:8px;
+      gap:10px;
     }
 
     .footer-soon{
@@ -198,15 +212,87 @@
       flex-wrap:wrap;
     }
 
+    /* ✅ Alive UI social chips */
     .chip{
+      position:relative;
       padding:10px 12px;
       border-radius:999px;
-      border:1px solid rgba(120,170,255,.28);
-      background:rgba(8,10,34,.45);
-      color:rgba(246,248,255,.88);
+      border:1px solid var(--chipBorder);
+      background:var(--chipBg);
+      color:rgba(246,248,255,.90);
       text-decoration:none;
       font-size:13px;
       white-space:nowrap;
+
+      /* motion */
+      transform: translateZ(0);
+      transition:
+        transform 180ms ease,
+        border-color 220ms ease,
+        background-color 220ms ease,
+        box-shadow 220ms ease,
+        color 220ms ease,
+        filter 220ms ease;
+      will-change: transform;
+      user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* subtle glow layer */
+    .chip::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      border-radius:999px;
+      background: radial-gradient(120px 40px at 30% 20%, rgba(120,170,255,.28), transparent 60%);
+      opacity:0;
+      filter: blur(6px);
+      transition: opacity 220ms ease;
+      pointer-events:none;
+    }
+
+    .chip:hover{
+      transform: translateY(-2px) scale(1.03);
+      border-color: rgba(160,210,255,.55);
+      background: rgba(10,14,44,.55);
+      box-shadow:
+        0 10px 26px rgba(0,0,0,.35),
+        0 0 0 1px rgba(140,200,255,.22),
+        0 0 24px rgba(120,170,255,.18);
+      filter: saturate(1.1);
+    }
+    .chip:hover::before{ opacity:1; }
+
+    /* keyboard focus */
+    .chip:focus-visible{
+      outline:none;
+      transform: translateY(-2px) scale(1.03);
+      border-color: rgba(180,225,255,.65);
+      box-shadow:
+        0 12px 28px rgba(0,0,0,.4),
+        0 0 0 3px rgba(120,170,255,.28);
+    }
+
+    /* click / tap */
+    .chip:active{
+      transform: translateY(0px) scale(0.98);
+      box-shadow:
+        0 6px 14px rgba(0,0,0,.35),
+        0 0 0 1px rgba(120,170,255,.18);
+    }
+
+    /* optional: tiny idle "alive" motion (very subtle) */
+    @keyframes chipBreath{
+      50%{ transform: translateY(-1px); }
+    }
+    .chip{
+      animation: chipBreath 4.2s ease-in-out infinite;
+    }
+    /* stop breathing while interacting */
+    .chip:hover,
+    .chip:focus-visible,
+    .chip:active{
+      animation: none;
     }
 
     .sig{
@@ -231,46 +317,54 @@
         justify-content:center;
       }
     }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce){
+      .brandLogo, .hero, .orbGlow, .stars::before, .stars::after, .chip{
+        animation: none !important;
+      }
+      .chip{
+        transition: none !important;
+      }
+    }
   </style>
 </head>
 
 <body class="stars">
-<main class="wrap">
-  <section class="frame">
+  <main class="wrap">
+    <section class="frame">
+      <div class="grid"></div>
 
-    <div class="grid"></div>
-
-    <div class="content">
-      <div class="brand">
-        <img class="brandLogo" src="brand-logo.png" alt="Webverse Worlds">
-      </div>
-
-      <div class="orbit">
-        <div class="orbWrap">
-          <div class="orbGlow"></div>
-          <img class="hero" src="logo.png" alt="Galaxy Logo">
+      <div class="content">
+        <div class="brand">
+          <img class="brandLogo" src="brand-logo.png" alt="Webverse Worlds">
         </div>
-      </div>
-    </div>
 
-    <div class="footer">
-      <div class="footer-left">
-        <div class="footer-soon">Coming soon</div>
-
-        <div class="links">
-          <a class="chip" href="https://www.youtube.com/@WebverseWorlds" target="_blank">YouTube</a>
-          <a class="chip" href="https://www.instagram.com/webverseworlds/" target="_blank">Instagram</a>
-          <a class="chip" href="https://www.facebook.com/webverseworlds/" target="_blank">Facebook</a>
-          <a class="chip" href="https://www.linkedin.com/company/webverseworlds" target="_blank">LinkedIn</a>
-          <a class="chip" href="https://www.tiktok.com/@webverseworlds/" target="_blank">TikTok</a>
-          <a class="chip" href="https://x.com/webverseworlds/" target="_blank">X</a>
+        <div class="orbit">
+          <div class="orbWrap">
+            <div class="orbGlow"></div>
+            <img class="hero" src="logo.png" alt="Galaxy Logo">
+          </div>
         </div>
       </div>
 
-      <div class="sig">© 2026 Webverse Worlds</div>
-    </div>
+      <div class="footer">
+        <div class="footer-left">
+          <div class="footer-soon">Coming soon</div>
 
-  </section>
-</main>
+          <div class="links">
+            <a class="chip" href="https://www.youtube.com/@WebverseWorlds" target="_blank" rel="noopener">YouTube</a>
+            <a class="chip" href="https://www.instagram.com/webverseworlds/" target="_blank" rel="noopener">Instagram</a>
+            <a class="chip" href="https://www.facebook.com/webverseworlds/" target="_blank" rel="noopener">Facebook</a>
+            <a class="chip" href="https://www.linkedin.com/company/webverseworlds" target="_blank" rel="noopener">LinkedIn</a>
+            <a class="chip" href="https://www.tiktok.com/@webverseworlds/" target="_blank" rel="noopener">TikTok</a>
+            <a class="chip" href="https://x.com/webverseworlds/" target="_blank" rel="noopener">X</a>
+          </div>
+        </div>
+
+        <div class="sig">© 2026 Webverse Worlds</div>
+      </div>
+    </section>
+  </main>
 </body>
 </html>
