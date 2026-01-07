@@ -57,6 +57,7 @@
       pointer-events:none;
       opacity:.35;
       animation: drift 18s linear infinite;
+      z-index: 0;
     }
     .stars::after{
       opacity:.2;
@@ -66,6 +67,22 @@
     }
     @keyframes drift{
       to{ transform: translate3d(60px,40px,0); }
+    }
+
+    /* ✅ Canvas starfall background */
+    #starCanvas{
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;          /* behind content */
+      pointer-events: none;
+    }
+
+    /* Ensure UI stays above the canvas */
+    .wrap, .frame, .grid{
+      position: relative;
+      z-index: 1;
     }
 
     .wrap{
@@ -83,7 +100,6 @@
       background:rgba(6,8,30,.45);
       backdrop-filter:blur(10px);
       box-shadow:0 25px 80px rgba(0,0,0,.55);
-      position:relative;
       overflow:hidden;
     }
 
@@ -295,6 +311,9 @@
       .brandLogo, .orbWrap, .stars::before, .stars::after{
         animation: none !important;
       }
+      /* stop canvas animation too (JS checks this, but this keeps everything calm) */
+      #starCanvas{ display:none; }
+
       .chip{
         transition: none !important;
       }
@@ -303,6 +322,9 @@
 </head>
 
 <body class="stars">
+  <!-- ✅ Canvas stars falling diagonally (top-left -> bottom-right) -->
+  <canvas id="starCanvas" aria-hidden="true"></canvas>
+
   <main class="wrap">
     <section class="frame">
       <div class="grid"></div>
@@ -337,5 +359,131 @@
       </div>
     </section>
   </main>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById("starCanvas");
+    if (!canvas) return;
+
+    // Respect reduced motion (also handled by CSS display:none above)
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+
+    const ctx = canvas.getContext("2d", { alpha: true });
+
+    const DPR = Math.min(2, window.devicePixelRatio || 1);
+    let w = 0, h = 0;
+
+    function resize() {
+      w = Math.floor(window.innerWidth);
+      h = Math.floor(window.innerHeight);
+      canvas.width = Math.floor(w * DPR);
+      canvas.height = Math.floor(h * DPR);
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+
+    const stars = [];
+    const STAR_COUNT = Math.min(240, Math.floor((window.innerWidth * window.innerHeight) / 8500));
+
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+
+    function spawnStar(offscreen = true) {
+      const fromTop = Math.random() < 0.55;
+
+      const x = offscreen
+        ? (fromTop ? rand(-w * 0.2, w * 1.0) : rand(-w * 0.2, 0))
+        : rand(0, w);
+
+      const y = offscreen
+        ? (fromTop ? rand(-h * 0.2, 0) : rand(-h * 0.2, h * 1.0))
+        : rand(0, h);
+
+      // Top-left -> bottom-right diagonal
+      const speed = rand(25, 140); // px/sec
+      const angle = rand(Math.PI * 0.15, Math.PI * 0.30); // ~27°–54° down-right
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      return {
+        x, y,
+        vx, vy,
+        r: rand(0.6, 1.8),
+        a: rand(0.15, 0.75),
+        tw: rand(0.6, 1.6),
+        ph: rand(0, Math.PI * 2),
+        tail: rand(0.0, 0.45) // adds small streaks sometimes
+      };
+    }
+
+    function init() {
+      stars.length = 0;
+      for (let i = 0; i < STAR_COUNT; i++) stars.push(spawnStar(false));
+    }
+
+    let last = performance.now();
+
+    function tick(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // soft fade veil (helps motion look smoother)
+      ctx.fillStyle = "rgba(5,6,22,0.08)";
+      ctx.fillRect(0, 0, w, h);
+
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+
+        // respawn when beyond bottom/right
+        if (s.x > w + 60 || s.y > h + 60) {
+          stars[i] = spawnStar(true);
+          continue;
+        }
+
+        // twinkle
+        s.ph += s.tw * dt;
+        const tw = 0.55 + 0.45 * Math.sin(s.ph * 3.2);
+        const alpha = s.a * tw;
+
+        // optional tiny streak
+        if (s.tail > 0.05) {
+          const tx = s.vx * 0.06 * (1 + s.tail * 2);
+          const ty = s.vy * 0.06 * (1 + s.tail * 2);
+
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+          ctx.lineTo(s.x - tx, s.y - ty);
+          ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.55})`;
+          ctx.lineWidth = Math.max(1, s.r);
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+
+        // dot
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fill();
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    window.addEventListener("resize", () => {
+      resize();
+      init();
+    }, { passive: true });
+
+    resize();
+    init();
+    requestAnimationFrame(tick);
+  })();
+  </script>
 </body>
 </html>
