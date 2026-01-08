@@ -1,3 +1,11 @@
+/*
+{
+  "category": "me",
+  "originHost": "webverseworlds.com",
+  "originBase": "/hello_from_valentin1",
+  "targetPath": "/"
+}
+*/
 const CATEGORY_SEPARATOR = "-";
 const DISCRIMINATOR_REGEX = /^\d{3}-\d{3}-\d{3}$/;
 
