@@ -1,6 +1,7 @@
 const CATEGORY_SEPARATOR = "-";
 const DISCRIMINATOR_REGEX = /^\d{3}-\d{3}-\d{3}$/;
 
+// ---- helpers ----
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -42,23 +43,9 @@ function isProbablyHtmlNavigation(request) {
   const accept = request.headers.get("accept") || "";
   return accept.includes("text/html");
 }
-
 function isHtmlResponse(resp) {
   const ct = resp.headers.get("content-type") || "";
   return ct.includes("text/html");
-}
-
-function joinOriginPath(base, path) {
-  let b = (base || "").trim();
-  if (b === "/") b = "";
-  if (b.endsWith("/")) b = b.slice(0, -1);
-
-  let p = path || "/";
-  if (!p.startsWith("/")) p = "/" + p;
-
-  const out = b + p;
-  if (out === b) return b + "/";
-  return out;
 }
 
 function joinPath(...parts) {
@@ -121,16 +108,30 @@ function upsertRobotsDirectives(html, { robotsMeta, googlebotMeta } = {}) {
   return `<head>${injections}</head>${html}`;
 }
 
+/**
+ * SECURITY: prevent becoming an open proxy.
+ * You can tighten this later (allowlist of domains, require https, block private IPs, etc.).
+ */
+function validateOriginUrl(originUrl) {
+  let u;
+  try {
+    u = new URL(originUrl);
+  } catch {
+    return { ok: false, reason: "originUrl is not a valid URL" };
+  }
+  if (u.protocol !== "https:") return { ok: false, reason: "originUrl must be https" };
+  return { ok: true, url: u };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Serve robots.txt from the Worker (canonical domain)
+    // ✅ Worker-owned robots.txt (your canonical domain policy)
     if (url.pathname === "/robots.txt") {
-      const body = `User-agent: *
+      return new Response(`User-agent: *
 Allow: /
-`;
-      return new Response(body, {
+`, {
         status: 200,
         headers: {
           "content-type": "text/plain; charset=UTF-8",
@@ -139,8 +140,7 @@ Allow: /
       });
     }
 
-    const host = url.hostname.toLowerCase();
-    const worldName = extractWorldName(host);
+    const worldName = extractWorldName(url.hostname);
     if (!worldName) return new Response("Not found", { status: 404 });
 
     const { disc, mode } = extractFromFirstSeg(url.pathname);
@@ -157,13 +157,15 @@ Allow: /
       return new Response("Bad registry entry", { status: 500 });
     }
 
+    // ✅ canonical category/segment
     const canonicalCategory = (cfg.category || "me").trim() || "me";
     const canonicalFirstSeg = `${canonicalCategory}${CATEGORY_SEPARATOR}${disc}`;
 
+    // Parse request restPath after first segment
     const parts = url.pathname.split("/").filter(Boolean);
     const restPath = parts.length > 1 ? "/" + parts.slice(1).join("/") : "/";
 
-    // Canonical redirect (keep restPath)
+    // ✅ canonical redirect (only for HTML navigations)
     if (isProbablyHtmlNavigation(request)) {
       const firstSeg = parts[0] || "";
       const isDiscOnly = mode === "discOnly";
@@ -175,55 +177,47 @@ Allow: /
       }
     }
 
-    const originHost = cfg.originHost;
-    if (!originHost) return new Response("Missing originHost in KV", { status: 500 });
+    // ✅ originUrl (works for ANY user-deployed website)
+    const originUrlRaw = (cfg.originUrl || "").trim();
+    if (!originUrlRaw) return new Response("Missing originUrl in registry", { status: 500 });
 
-    const originBase = (cfg.originBase || "").trim();
-    const targetPath = (cfg.targetPath || "/").trim();
-    const originPath = joinPath(originBase, targetPath, restPath);
+    const check = validateOriginUrl(originUrlRaw);
+    if (!check.ok) return new Response(`Bad originUrl: ${check.reason}`, { status: 500 });
 
-    const originUrl = new URL(request.url);
-    originUrl.protocol = "https:";
-    originUrl.hostname = originHost;
-    originUrl.pathname = originPath;
-    originUrl.search = url.search;
+    const originBase = check.url; // e.g. https://my-site.netlify.app
+    const originBasePath = (cfg.originBasePath || "").trim(); // optional subfolder on origin
 
-    // Don’t force Host header; Cloudflare sets it based on originUrl.hostname
+    // Build target URL on origin:
+    // origin pathname = originBasePath + restPath
+    const target = new URL(originBase.toString());
+    target.pathname = joinPath(originBasePath, restPath);
+    target.search = url.search;
+
+    // Proxy request (avoid GET/HEAD body)
     const headers = new Headers(request.headers);
-    headers.delete("host");
+    headers.delete("host"); // let fetch set correct host for origin
+    // Optional: drop accept-encoding so CF can decode and you can rewrite HTML reliably
+    // headers.delete("accept-encoding");
 
     const init = {
       method: request.method,
       headers,
       redirect: "follow",
     };
-
-    // Only include body for methods that can have one
     if (request.method !== "GET" && request.method !== "HEAD") {
       init.body = request.body;
     }
 
-    let resp = await fetch(originUrl.toString(), init);
+    let resp = await fetch(target.toString(), init);
 
-    // Strict: Only fallback for world root
-    if (resp.status === 404 && isProbablyHtmlNavigation(request) && restPath === "/") {
-      const shellUrl = new URL(request.url);
-      shellUrl.protocol = "https:";
-      shellUrl.hostname = originHost;
-      shellUrl.pathname = joinOriginPath(originBase, "/index.html");
-
-      const shellResp = await fetch(shellUrl.toString(), { method: "GET" });
-      resp = new Response(shellResp.body, { status: 200, headers: shellResp.headers });
-    }
-
-    // Canonical + robots injection (Worker-served pages should be indexed)
+    // If HTML, inject canonical + make indexable on Worker domain
     if (isHtmlResponse(resp)) {
-      const canonicalUrl =
-        `${url.origin}/${canonicalFirstSeg}` + (restPath === "/" ? "" : restPath);
+      const canonicalUrl = `${url.origin}/${canonicalFirstSeg}` + (restPath === "/" ? "" : restPath);
 
       let html = await resp.text();
       html = injectCanonical(html, canonicalUrl);
 
+      // Worker-served page should be indexable
       const ROBOTS_META = "index, follow";
       const GOOGLEBOT_META =
         "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
@@ -235,6 +229,8 @@ Allow: /
 
       const outHeaders = new Headers(resp.headers);
       outHeaders.delete("content-length");
+
+      // Strong crawler directive at HTTP level
       outHeaders.set("X-Robots-Tag", "index, follow");
 
       return new Response(html, { status: resp.status, headers: outHeaders });
