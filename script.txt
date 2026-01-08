@@ -36,14 +36,18 @@ function extractFromFirstSeg(pathname) {
   }
   return { category, disc, mode: "categoryDisc" };
 }
-function isHtmlNavigation(request, url) {
+
+function isProbablyHtmlNavigation(request) {
+  if (request.method !== "GET") return false;
   const accept = request.headers.get("accept") || "";
-  return request.method === "GET" && accept.includes("text/html") && !url.pathname.includes(".");
+  return accept.includes("text/html");
 }
+
 function isHtmlResponse(resp) {
   const ct = resp.headers.get("content-type") || "";
   return ct.includes("text/html");
 }
+
 function joinOriginPath(base, path) {
   let b = (base || "").trim();
   if (b === "/") b = "";
@@ -56,6 +60,7 @@ function joinOriginPath(base, path) {
   if (out === b) return b + "/";
   return out;
 }
+
 function joinPath(...parts) {
   const cleaned = parts
     .filter((p) => p != null && p !== "")
@@ -69,6 +74,7 @@ function joinPath(...parts) {
   if (!out.startsWith("/")) out = "/" + out;
   return out;
 }
+
 function canonicalizeUrlKeepingRest(requestUrl, canonicalFirstSeg) {
   const fixed = new URL(requestUrl);
   const parts = fixed.pathname.split("/").filter(Boolean);
@@ -82,7 +88,7 @@ function canonicalizeUrlKeepingRest(requestUrl, canonicalFirstSeg) {
 }
 
 function injectCanonical(html, canonicalUrl) {
-  html = html.replace(/<link\s+rel=["']canonical["'][^>]*>/gi, "");
+  html = html.replace(/<link\s+rel=["']canonical["'][^>]*>\s*/gi, "");
   if (/<\/head>/i.test(html)) {
     return html.replace(
       /<\/head>/i,
@@ -119,9 +125,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // ✅ Option A: Serve robots.txt from the Worker (canonical domain)
+    // Serve robots.txt from the Worker (canonical domain)
     if (url.pathname === "/robots.txt") {
-      // Adjust policy if you want to block some paths
       const body = `User-agent: *
 Allow: /
 `;
@@ -129,14 +134,12 @@ Allow: /
         status: 200,
         headers: {
           "content-type": "text/plain; charset=UTF-8",
-          // Optional: cache it at the edge
           "cache-control": "public, max-age=3600",
         },
       });
     }
 
     const host = url.hostname.toLowerCase();
-
     const worldName = extractWorldName(host);
     if (!worldName) return new Response("Not found", { status: 404 });
 
@@ -161,7 +164,7 @@ Allow: /
     const restPath = parts.length > 1 ? "/" + parts.slice(1).join("/") : "/";
 
     // Canonical redirect (keep restPath)
-    if (isHtmlNavigation(request, url)) {
+    if (isProbablyHtmlNavigation(request)) {
       const firstSeg = parts[0] || "";
       const isDiscOnly = mode === "discOnly";
       const isCategoryNotCanonical = mode === "categoryDisc" && firstSeg !== canonicalFirstSeg;
@@ -185,28 +188,31 @@ Allow: /
     originUrl.pathname = originPath;
     originUrl.search = url.search;
 
+    // Don’t force Host header; Cloudflare sets it based on originUrl.hostname
     const headers = new Headers(request.headers);
-    headers.set("Host", originHost);
+    headers.delete("host");
 
-    let resp = await fetch(originUrl.toString(), {
+    const init = {
       method: request.method,
       headers,
-      body: request.body,
       redirect: "follow",
-    });
+    };
 
-    // ✅ STRICT: Only fallback for world root
-    if (resp.status === 404 && isHtmlNavigation(request, url) && restPath === "/") {
+    // Only include body for methods that can have one
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      init.body = request.body;
+    }
+
+    let resp = await fetch(originUrl.toString(), init);
+
+    // Strict: Only fallback for world root
+    if (resp.status === 404 && isProbablyHtmlNavigation(request) && restPath === "/") {
       const shellUrl = new URL(request.url);
       shellUrl.protocol = "https:";
       shellUrl.hostname = originHost;
       shellUrl.pathname = joinOriginPath(originBase, "/index.html");
 
-      const shellResp = await fetch(shellUrl.toString(), {
-        method: "GET",
-        headers: new Headers({ Host: originHost }),
-      });
-
+      const shellResp = await fetch(shellUrl.toString(), { method: "GET" });
       resp = new Response(shellResp.body, { status: 200, headers: shellResp.headers });
     }
 
@@ -218,7 +224,6 @@ Allow: /
       let html = await resp.text();
       html = injectCanonical(html, canonicalUrl);
 
-      // ✅ Override origin noindex for the Worker-served canonical pages
       const ROBOTS_META = "index, follow";
       const GOOGLEBOT_META =
         "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
@@ -230,8 +235,6 @@ Allow: /
 
       const outHeaders = new Headers(resp.headers);
       outHeaders.delete("content-length");
-
-      // Stronger than meta tags
       outHeaders.set("X-Robots-Tag", "index, follow");
 
       return new Response(html, { status: resp.status, headers: outHeaders });
