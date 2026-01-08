@@ -1,0 +1,242 @@
+const CATEGORY_SEPARATOR = "-";
+const DISCRIMINATOR_REGEX = /^\d{3}-\d{3}-\d{3}$/;
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function stripAnchors(regexSource) {
+  return regexSource.replace(/^\^/, "").replace(/\$$/, "");
+}
+function extractWorldName(host) {
+  host = host.toLowerCase();
+  if (!host.endsWith(".webverse.world")) return null;
+  const label = host.slice(0, -".webverse.world".length);
+  if (!label || label === "*" || label === "webverse") return null;
+  return label;
+}
+function extractFromFirstSeg(pathname) {
+  const firstSeg = pathname.split("/").filter(Boolean)[0];
+  if (!firstSeg) return { category: null, disc: null, mode: null };
+
+  if (DISCRIMINATOR_REGEX.test(firstSeg)) {
+    return { category: null, disc: firstSeg, mode: "discOnly" };
+  }
+
+  const sep = escapeRegex(CATEGORY_SEPARATOR);
+  const discPattern = stripAnchors(DISCRIMINATOR_REGEX.source);
+  const re = new RegExp(`^(.*)${sep}(${discPattern})$`);
+  const match = firstSeg.match(re);
+  if (!match) return { category: null, disc: null, mode: null };
+
+  const category = match[1] || null;
+  const disc = match[2] || null;
+
+  if (!disc || !DISCRIMINATOR_REGEX.test(disc)) {
+    return { category: null, disc: null, mode: null };
+  }
+  return { category, disc, mode: "categoryDisc" };
+}
+function isHtmlNavigation(request, url) {
+  const accept = request.headers.get("accept") || "";
+  return request.method === "GET" && accept.includes("text/html") && !url.pathname.includes(".");
+}
+function isHtmlResponse(resp) {
+  const ct = resp.headers.get("content-type") || "";
+  return ct.includes("text/html");
+}
+function joinOriginPath(base, path) {
+  let b = (base || "").trim();
+  if (b === "/") b = "";
+  if (b.endsWith("/")) b = b.slice(0, -1);
+
+  let p = path || "/";
+  if (!p.startsWith("/")) p = "/" + p;
+
+  const out = b + p;
+  if (out === b) return b + "/";
+  return out;
+}
+function joinPath(...parts) {
+  const cleaned = parts
+    .filter((p) => p != null && p !== "")
+    .map((p) => String(p));
+
+  let out = "";
+  for (const p of cleaned) {
+    if (!out) out = p;
+    else out = out.replace(/\/+$/, "") + "/" + p.replace(/^\/+/, "");
+  }
+  if (!out.startsWith("/")) out = "/" + out;
+  return out;
+}
+function canonicalizeUrlKeepingRest(requestUrl, canonicalFirstSeg) {
+  const fixed = new URL(requestUrl);
+  const parts = fixed.pathname.split("/").filter(Boolean);
+  if (parts.length === 0) {
+    fixed.pathname = `/${canonicalFirstSeg}`;
+    return fixed;
+  }
+  parts[0] = canonicalFirstSeg;
+  fixed.pathname = "/" + parts.join("/");
+  return fixed;
+}
+
+function injectCanonical(html, canonicalUrl) {
+  html = html.replace(/<link\s+rel=["']canonical["'][^>]*>/gi, "");
+  if (/<\/head>/i.test(html)) {
+    return html.replace(
+      /<\/head>/i,
+      `  <link rel="canonical" href="${canonicalUrl}">\n</head>`
+    );
+  }
+  return `<head><link rel="canonical" href="${canonicalUrl}"></head>${html}`;
+}
+
+function upsertRobotsDirectives(html, { robotsMeta, googlebotMeta } = {}) {
+  html = html
+    .replace(/<meta\s+name=["']robots["'][^>]*>\s*/gi, "")
+    .replace(/<meta\s+name=["']googlebot["'][^>]*>\s*/gi, "");
+
+  const injections = [
+    robotsMeta ? `<meta name="robots" content="${robotsMeta}">` : "",
+    googlebotMeta ? `<meta name="googlebot" content="${googlebotMeta}">` : "",
+  ]
+    .filter(Boolean)
+    .join("\n  ");
+
+  if (!injections) return html;
+
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (m) => `${m}\n  ${injections}`);
+  }
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `  ${injections}\n</head>`);
+  }
+  return `<head>${injections}</head>${html}`;
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    // ✅ Option A: Serve robots.txt from the Worker (canonical domain)
+    if (url.pathname === "/robots.txt") {
+      // Adjust policy if you want to block some paths
+      const body = `User-agent: *
+Allow: /
+`;
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "content-type": "text/plain; charset=UTF-8",
+          // Optional: cache it at the edge
+          "cache-control": "public, max-age=3600",
+        },
+      });
+    }
+
+    const host = url.hostname.toLowerCase();
+
+    const worldName = extractWorldName(host);
+    if (!worldName) return new Response("Not found", { status: 404 });
+
+    const { disc, mode } = extractFromFirstSeg(url.pathname);
+    if (!disc) return new Response("World discriminator missing", { status: 404 });
+
+    const key = `${worldName}#${disc}`;
+    const raw = await env.WORLDS.get(key);
+    if (!raw) return new Response("World not registered", { status: 404 });
+
+    let cfg;
+    try {
+      cfg = JSON.parse(raw);
+    } catch {
+      return new Response("Bad registry entry", { status: 500 });
+    }
+
+    const canonicalCategory = (cfg.category || "me").trim() || "me";
+    const canonicalFirstSeg = `${canonicalCategory}${CATEGORY_SEPARATOR}${disc}`;
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    const restPath = parts.length > 1 ? "/" + parts.slice(1).join("/") : "/";
+
+    // Canonical redirect (keep restPath)
+    if (isHtmlNavigation(request, url)) {
+      const firstSeg = parts[0] || "";
+      const isDiscOnly = mode === "discOnly";
+      const isCategoryNotCanonical = mode === "categoryDisc" && firstSeg !== canonicalFirstSeg;
+
+      if (isDiscOnly || isCategoryNotCanonical) {
+        const fixed = canonicalizeUrlKeepingRest(url.toString(), canonicalFirstSeg);
+        return Response.redirect(fixed.toString(), 308);
+      }
+    }
+
+    const originHost = cfg.originHost;
+    if (!originHost) return new Response("Missing originHost in KV", { status: 500 });
+
+    const originBase = (cfg.originBase || "").trim();
+    const targetPath = (cfg.targetPath || "/").trim();
+    const originPath = joinPath(originBase, targetPath, restPath);
+
+    const originUrl = new URL(request.url);
+    originUrl.protocol = "https:";
+    originUrl.hostname = originHost;
+    originUrl.pathname = originPath;
+    originUrl.search = url.search;
+
+    const headers = new Headers(request.headers);
+    headers.set("Host", originHost);
+
+    let resp = await fetch(originUrl.toString(), {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: "follow",
+    });
+
+    // ✅ STRICT: Only fallback for world root
+    if (resp.status === 404 && isHtmlNavigation(request, url) && restPath === "/") {
+      const shellUrl = new URL(request.url);
+      shellUrl.protocol = "https:";
+      shellUrl.hostname = originHost;
+      shellUrl.pathname = joinOriginPath(originBase, "/index.html");
+
+      const shellResp = await fetch(shellUrl.toString(), {
+        method: "GET",
+        headers: new Headers({ Host: originHost }),
+      });
+
+      resp = new Response(shellResp.body, { status: 200, headers: shellResp.headers });
+    }
+
+    // Canonical + robots injection (Worker-served pages should be indexed)
+    if (isHtmlResponse(resp)) {
+      const canonicalUrl =
+        `${url.origin}/${canonicalFirstSeg}` + (restPath === "/" ? "" : restPath);
+
+      let html = await resp.text();
+      html = injectCanonical(html, canonicalUrl);
+
+      // ✅ Override origin noindex for the Worker-served canonical pages
+      const ROBOTS_META = "index, follow";
+      const GOOGLEBOT_META =
+        "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
+
+      html = upsertRobotsDirectives(html, {
+        robotsMeta: ROBOTS_META,
+        googlebotMeta: GOOGLEBOT_META,
+      });
+
+      const outHeaders = new Headers(resp.headers);
+      outHeaders.delete("content-length");
+
+      // Stronger than meta tags
+      outHeaders.set("X-Robots-Tag", "index, follow");
+
+      return new Response(html, { status: resp.status, headers: outHeaders });
+    }
+
+    return resp;
+  },
+};
