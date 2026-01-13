@@ -146,6 +146,12 @@
       50%{ transform: translateY(6px); }
     }
 
+    /* ✅ NEW: slow rotation for the universe image */
+    @keyframes slowSpin{
+      from{ transform: rotate(0deg); }
+      to{ transform: rotate(360deg); }
+    }
+
     /* ✅ Brand floats UP */
     .brandLogo{
       width:min(520px, 100%);
@@ -167,7 +173,7 @@
       display:grid;
       place-items:center;
 
-      /* ✅ Galaxy (border + image) floats DOWN (same as before) */
+      /* ✅ Galaxy (border + image) floats DOWN */
       animation: floatInverse 5s ease-in-out infinite;
       will-change: transform;
       transform: translateZ(0);
@@ -202,6 +208,11 @@
       filter:drop-shadow(0 18px 32px rgba(0,0,0,.55));
       position:relative;
       z-index:2;
+
+      /* ✅ NEW: slow rotation on the logo image itself */
+      animation: slowSpin 240s linear infinite;
+      will-change: transform;
+      transform-origin: 50% 50%;
     }
 
     .footer{
@@ -307,10 +318,10 @@
 
     /* Respect reduced motion */
     @media (prefers-reduced-motion: reduce){
-      .brandLogo, .orbWrap, .stars::before, .stars::after{
+      .brandLogo, .orbWrap, .hero, .stars::before, .stars::after{
         animation: none !important;
       }
-      /* stop canvas animation too (JS checks this, but this keeps everything calm) */
+      /* stop canvas animation too */
       #starCanvas{ display:none; }
 
       .chip{
@@ -325,26 +336,24 @@
       }
 
       .content{
-        padding-left: 5px;   /* was 38px */
-        padding-right: 5px;  /* was 38px */
+        padding-left: 5px;
+        padding-right: 5px;
       }
 
       .footer{
-        padding-left: 5px;   /* was 38px */
-        padding-right: 5px;  /* was 38px */
+        padding-left: 5px;
+        padding-right: 5px;
       }
     }
 
     @media (max-width: 420px){
-      /* Brand logo image */
       .brandLogo{
-        max-width: 420px;   /* clamp the size */
+        max-width: 420px;
         width: 90%;
       }
 
-      /* Galaxy orb size */
       .orbWrap{
-        width: 230px;       /* was ~320px on mobile */
+        width: 230px;
       }
     }
   </style>
@@ -400,7 +409,7 @@
 
     const ctx = canvas.getContext("2d", { alpha: true });
 
-    // ✅ Global slowdown (recommended)
+    // ✅ Global slowdown
     const TIME_SCALE = 0.5; // 1 = normal, 0.5 = half speed, 0.3 = very slow
 
     const DPR = Math.min(2, window.devicePixelRatio || 1);
@@ -432,8 +441,8 @@
         ? (fromTop ? rand(-h * 0.2, 0) : rand(-h * 0.2, h * 1.0))
         : rand(0, h);
 
-      // ✅ Slower speed range (recommended)
-      const speed = rand(8, 50); // px/sec (was 25..140)
+      // ✅ Slower speed range
+      const speed = rand(8, 50); // px/sec
 
       // Top-left -> bottom-right diagonal
       const angle = rand(Math.PI * 0.15, Math.PI * 0.30); // ~27°–54° down-right
@@ -447,7 +456,7 @@
         a: rand(0.15, 0.75),
         tw: rand(0.6, 1.6),
         ph: rand(0, Math.PI * 2),
-        tail: rand(0.0, 0.45) // adds small streaks sometimes
+        tail: rand(0.0, 0.45)
       };
     }
 
@@ -459,13 +468,12 @@
     let last = performance.now();
 
     function tick(now) {
-      // ✅ Apply TIME_SCALE to dt (global slowdown)
       const dt = Math.min(0.033, (now - last) / 1000) * TIME_SCALE;
       last = now;
 
       ctx.clearRect(0, 0, w, h);
 
-      // soft fade veil (helps motion look smoother)
+      // soft fade veil
       ctx.fillStyle = "rgba(5,6,22,0.08)";
       ctx.fillRect(0, 0, w, h);
 
@@ -486,9 +494,9 @@
         const tw = 0.55 + 0.45 * Math.sin(s.ph * 3.2);
         const alpha = s.a * tw;
 
-        // ✅ Shorter streaks (recommended so it "feels" slower)
+        // streak
         if (s.tail > 0.05) {
-          const tx = s.vx * 0.03 * (1 + s.tail); // was 0.06*(1 + s.tail*2)
+          const tx = s.vx * 0.03 * (1 + s.tail);
           const ty = s.vy * 0.03 * (1 + s.tail);
 
           ctx.beginPath();
