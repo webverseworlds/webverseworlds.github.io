@@ -8,7 +8,7 @@
   <!-- ✅ Minimal SEO -->
   <link rel="canonical" href="https://webverseworlds.com/" />
 
-  <title>Webverse Worlds — Coming Soon</title>
+  <title>Webverse — The Web Universe built on the Web of Objects paradigm.</title>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -159,6 +159,50 @@
       animation: float 5s ease-in-out infinite;
       will-change: transform;
     }
+
+	/* Brand block floats UP (logo + tagline together) */
+	.brandBlock{
+	  display:flex;
+	  flex-direction:column;
+	  align-items:center;          /* ✅ center everything */
+	  text-align:center;           /* ✅ center text */
+	  gap:14px;
+
+	  animation: float 5s ease-in-out infinite;
+	  will-change: transform;
+	}
+
+	@media (max-width: 980px){
+	  .brandBlock{ align-items:center; }
+	}
+
+	/* Stop floating on the image itself (so it doesn't double-float) */
+	.brandLogo{
+	  width:min(520px, 100%);
+	  filter:drop-shadow(0 12px 18px rgba(0,0,0,.45));
+	  animation: none; /* was: float ... */
+	  will-change: transform;
+	}
+
+	/* Tagline styling */
+	.brandTagline{
+	  max-width: 560px;
+	  font-family: "Exo 2", system-ui, sans-serif;
+
+	  font-size: 18px;             /* ✅ bigger, readable */
+	  line-height: 1.45;
+
+	  color: rgba(246,248,255,.78);
+	  letter-spacing: .04em;       /* subtle tech feel */
+
+	  opacity: .9;
+	}
+
+	@media (min-width: 1200px){
+	  .brandTagline{
+		font-size: 20px;
+	  }
+	}
 
     .orbit{
       display:grid;
@@ -356,6 +400,32 @@
         width: 230px;
       }
     }
+	
+	/* Web of Objects link inside tagline */
+.woLink{
+  color: rgba(180,215,255,.95);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(180,215,255,.35);
+  padding-bottom: 1px;
+
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    text-shadow 180ms ease;
+}
+
+.woLink:hover{
+  color: rgba(210,235,255,1);
+  border-bottom-color: rgba(210,235,255,.75);
+  text-shadow: 0 0 14px rgba(140,200,255,.35);
+}
+
+.woLink:focus-visible{
+  outline: none;
+  border-bottom-color: rgba(210,235,255,.9);
+  text-shadow: 0 0 18px rgba(140,200,255,.45);
+}
+
   </style>
 </head>
 
@@ -368,9 +438,18 @@
       <div class="grid"></div>
 
       <div class="content">
-        <div class="brand">
-          <img class="brandLogo" src="brand-logo.png">
-        </div>
+		<div class="brand">
+		  <div class="brandBlock">
+			<img class="brandLogo" src="brand-logo.png" alt="Webverse">
+			<div class="brandTagline">
+			  The Web Universe built on the
+			  <a href="https://webofobjects.com" target="_blank" rel="noopener" class="woLink">
+				Web of Objects
+			  </a>
+			  paradigm
+			</div>
+		  </div>
+		</div>
 
         <div class="orbit">
           <div class="orbWrap">
@@ -381,8 +460,6 @@
 
       <div class="footer">
         <div class="footer-left">
-          <div class="footer-soon">Coming soon</div>
-
           <div class="links">
             <a class="chip" href="https://www.youtube.com/@WebverseWorlds" target="_blank" rel="noopener">YouTube</a>
             <a class="chip" href="https://www.instagram.com/webverseworlds/" target="_blank" rel="noopener">Instagram</a>
@@ -393,7 +470,7 @@
           </div>
         </div>
 
-        <div class="sig">© 2026 Webverse Worlds</div>
+        <div class="sig">© 2026 Webverse</div>
       </div>
     </section>
   </main>
