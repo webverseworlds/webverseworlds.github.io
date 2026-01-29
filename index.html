@@ -402,29 +402,30 @@
     }
 	
 	/* Web of Objects link inside tagline */
-.woLink{
-  color: rgba(180,215,255,.95);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(180,215,255,.35);
-  padding-bottom: 1px;
+	.woLink{
+	  color: inherit;                 /* same white as text */
+	  text-decoration: none;
+	  border-bottom: 1px solid rgba(246,248,255,.35); /* soft white underline */
+	  padding-bottom: 1px;
 
-  transition:
-    color 180ms ease,
-    border-color 180ms ease,
-    text-shadow 180ms ease;
-}
+	  transition:
+		border-color 160ms ease,
+		text-shadow 160ms ease,
+		opacity 160ms ease;
+	}
 
-.woLink:hover{
-  color: rgba(210,235,255,1);
-  border-bottom-color: rgba(210,235,255,.75);
-  text-shadow: 0 0 14px rgba(140,200,255,.35);
-}
+	.woLink:hover{
+	  border-bottom-color: rgba(246,248,255,.75);
+	  text-shadow: 0 0 12px rgba(255,255,255,.25);
+	}
 
-.woLink:focus-visible{
-  outline: none;
-  border-bottom-color: rgba(210,235,255,.9);
-  text-shadow: 0 0 18px rgba(140,200,255,.45);
-}
+	.woLink:focus-visible{
+	  outline: none;
+	  border-bottom-color: rgba(246,248,255,.9);
+	  text-shadow: 0 0 16px rgba(255,255,255,.35);
+	}
+
+
 
   </style>
 </head>
